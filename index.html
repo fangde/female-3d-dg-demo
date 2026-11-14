@@ -58,9 +58,10 @@
     <label class="chk"><input type="checkbox" id="chkWire"> 网格线框</label>
   </div>
   <div class="row" style="margin-top:10px;">
-    <a href="assets/face_canonical.obj" download style="color:#58a6ff;font-size:11px;text-decoration:none;">下载 face.obj</a>
-    <a href="assets/hair_canonical.obj" download style="color:#58a6ff;font-size:11px;text-decoration:none;">下载 hair.obj</a>
-    <a href="assets/scene_240f.bin" download style="color:#58a6ff;font-size:11px;text-decoration:none;">下载 240f.bin</a>
+    <button id="recBtn">🎬 录制 Demo (12s)</button>
+    <a href="assets/face_canonical.obj" download style="color:#58a6ff;font-size:11px;text-decoration:none;">face.obj</a>
+    <a href="assets/hair_canonical.obj" download style="color:#58a6ff;font-size:11px;text-decoration:none;">hair.obj</a>
+    <a href="assets/scene_240f.bin" download style="color:#58a6ff;font-size:11px;text-decoration:none;">240f.bin</a>
   </div>
 </div>
 
@@ -256,6 +257,73 @@ async function init() {
 
   setFrame(168);
   document.getElementById('loading').style.display = 'none';
+
+  function startDemoRecording(durationMs = 12000) {
+    const stream = renderer.domElement.captureStream(24);
+    const mime = MediaRecorder.isTypeSupported('video/webm;codecs=vp9') ? 'video/webm;codecs=vp9' : 'video/webm';
+    const rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 6000000 });
+    const chunks = [];
+    rec.ondataavailable = e => { if (e.data && e.data.size > 0) chunks.push(e.data); };
+    rec.onstop = () => {
+      const blob = new Blob(chunks, { type: 'video/webm' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'threejs_demo.webm';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      document.title = 'RECORD_DONE';
+      document.getElementById('recBtn').textContent = '🎬 录制完成';
+    };
+
+    const c168 = cams240.subarray(168 * 16, 169 * 16);
+    const up = new THREE.Vector3(-c168[4], -c168[5], -c168[6]).normalize();
+    const fwd0 = new THREE.Vector3(c168[8], c168[9], c168[10]).normalize();
+    const right0 = new THREE.Vector3().crossVectors(fwd0, up).normalize();
+    const tStart = performance.now();
+    document.getElementById('recBtn').textContent = '⏺ 录制中...';
+    rec.start(100);
+
+    function stepRec() {
+      const elapsed = performance.now() - tStart;
+      const p = Math.min(1.0, elapsed / durationMs);
+      if (p < 0.75) {
+        document.getElementById('camMode').value = 'orbit';
+        controls.enabled = false;
+        const ang = (p / 0.75) * Math.PI * 2.0;
+        const dir = fwd0.clone().multiplyScalar(Math.cos(ang)).addScaledVector(right0, Math.sin(ang));
+        camera.up.copy(up);
+        camera.position.set(hc[0] - dir.x * 5.0, hc[1] - dir.y * 5.0, hc[2] - dir.z * 5.0);
+        camera.lookAt(hc[0], hc[1], hc[2]);
+        const showDG = p < 0.25 || p >= 0.50;
+        const showWire = p >= 0.50;
+        dgPts.visible = showDG; dgLines.visible = showDG;
+        document.getElementById('chkDG').checked = showDG;
+        faceMat.wireframe = showWire; hairMat.wireframe = showWire;
+        document.getElementById('chkWire').checked = showWire;
+        setFrame(Math.floor((p / 0.75) * 239));
+      } else {
+        faceMat.wireframe = false; hairMat.wireframe = false;
+        dgPts.visible = true; dgLines.visible = true;
+        document.getElementById('camMode').value = 'video';
+        const fr = Math.floor(134 + ((p - 0.75) / 0.25) * 105);
+        setFrame(fr);
+      }
+      if (elapsed < durationMs) {
+        requestAnimationFrame(stepRec);
+      } else {
+        rec.stop();
+        setOrbitView();
+      }
+    }
+    requestAnimationFrame(stepRec);
+  }
+
+  document.getElementById('recBtn').onclick = () => startDemoRecording(12000);
+  if (new URLSearchParams(window.location.search).get('record') === '1') {
+    setTimeout(() => startDemoRecording(10000), 600);
+  }
 
   function animate() {
     requestAnimationFrame(animate);
