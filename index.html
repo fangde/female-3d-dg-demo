@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Three.js 3D Viewer — 100-Node DG Face + Stage 9 Hair (240f)</title>
+<style>
+  html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #0d1117; color: #e6edf3; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  #canvasWrap { position: fixed; inset: 0; }
+  #hud {
+    position: fixed; top: 14px; left: 14px; z-index: 10;
+    background: rgba(22, 27, 34, 0.88); backdrop-filter: blur(8px);
+    border: 1px solid #30363d; border-radius: 10px; padding: 12px 14px; width: 320px;
+  }
+  .h-title { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
+  .h-sub { font-size: 11px; color: #8b949e; margin-bottom: 10px; }
+  .row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 6px 0; font-size: 12px; }
+  .toggles { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 8px; }
+  label.chk { display: flex; align-items: center; gap: 6px; font-size: 12px; cursor: pointer; }
+  button, select {
+    background: #21262d; color: #e6edf3; border: 1px solid #30363d; border-radius: 6px;
+    padding: 5px 10px; font-size: 12px; cursor: pointer;
+  }
+  button.primary { background: #1f6feb; border-color: #388bfd; color: #fff; }
+  button:hover { border-color: #58a6ff; }
+  #timeline {
+    position: fixed; left: 14px; right: 14px; bottom: 14px; z-index: 10;
+    background: rgba(22, 27, 34, 0.88); backdrop-filter: blur(8px);
+    border: 1px solid #30363d; border-radius: 10px; padding: 10px 14px;
+    display: flex; align-items: center; gap: 12px;
+  }
+  #slider { flex: 1; accent-color: #58a6ff; cursor: pointer; }
+  #frameTxt { min-width: 95px; text-align: right; font-variant-numeric: tabular-nums; font-size: 13px; font-weight: 600; }
+  #loading {
+    position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+    background: rgba(13, 17, 23, 0.92); z-index: 20; font-size: 15px;
+  }
+</style>
+</head>
+<body>
+<div id="loading">正在加载 Three.js 240 帧网格、2K 贴图与 100 节点形变数据...</div>
+<div id="canvasWrap"></div>
+
+<div id="hud">
+  <div class="h-title">Three.js 3D 交互预览（脸 + 头发 + 240帧形变）</div>
+  <div class="h-sub" id="statsTxt">加载中...</div>
+  <div class="row">
+    <span>相机模式</span>
+    <select id="camMode">
+      <option value="orbit">自由 3D 旋转 (Orbit)</option>
+      <option value="video">锁定视频轨迹 (240f)</option>
+    </select>
+  </div>
+  <div class="toggles">
+    <label class="chk"><input type="checkbox" id="chkFace" checked> 显示脸部</label>
+    <label class="chk"><input type="checkbox" id="chkHair" checked> 显示头发</label>
+    <label class="chk"><input type="checkbox" id="chkDG" checked> 100节点 DG</label>
+    <label class="chk"><input type="checkbox" id="chkWire"> 网格线框</label>
+  </div>
+  <div class="row" style="margin-top:10px;">
+    <a href="assets/face_canonical.obj" download style="color:#58a6ff;font-size:11px;text-decoration:none;">下载 face.obj</a>
+    <a href="assets/hair_canonical.obj" download style="color:#58a6ff;font-size:11px;text-decoration:none;">下载 hair.obj</a>
+    <a href="assets/scene_240f.bin" download style="color:#58a6ff;font-size:11px;text-decoration:none;">下载 240f.bin</a>
+  </div>
+</div>
+
+<div id="timeline">
+  <button id="prevBtn">◀</button>
+  <button id="playBtn" class="primary">▶ 播放</button>
+  <button id="nextBtn">▶</button>
+  <input id="slider" type="range" min="0" max="239" value="168" step="1">
+  <div id="frameTxt">Frame 168 / 239</div>
+  <select id="fpsSel">
+    <option value="12">12 fps</option>
+    <option value="24" selected>24 fps</option>
+  </select>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "./vendor/three.module.js"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from './vendor/jsm/controls/OrbitControls.js';
+
+const wrap = document.getElementById('canvasWrap');
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+wrap.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0d1117);
+
+const camera = new THREE.PerspectiveCamera(35, window.innerWidth / window.innerHeight, 0.05, 100);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+
+scene.add(new THREE.AmbientLight(0xffffff, 1.0));
+
+async function init() {
+  const manifest = await (await fetch('./assets/manifest.json')).json();
+  const binBuf = await (await fetch('./assets/scene_240f.bin')).arrayBuffer();
+
+  const getView = (name) => {
+    const info = manifest.buffers[name];
+    if (info.dtype === 'float32') return new Float32Array(binBuf, info.byteOffset, info.byteLength / 4);
+    if (info.dtype === 'uint32') return new Uint32Array(binBuf, info.byteOffset, info.byteLength / 4);
+    if (info.dtype === 'uint16') return new Uint16Array(binBuf, info.byteOffset, info.byteLength / 2);
+  };
+
+  const facePos240 = getView('face_pos_240');
+  const faceUV = getView('face_uv');
+  const faceIdx = getView('face_idx');
+  const hairPos = getView('hair_pos');
+  const hairUV = getView('hair_uv');
+  const hairIdx = getView('hair_idx');
+  const dgNodes240 = getView('dg_nodes_240');
+  const dgEdges = getView('dg_edges');
+  const cams240 = getView('cameras_240');
+
+  const texLoader = new THREE.TextureLoader();
+  const texFace = await texLoader.loadAsync('./assets/face_texture_2k.png');
+  texFace.colorSpace = THREE.SRGBColorSpace;
+  texFace.flipY = true;
+  const texHair = await texLoader.loadAsync('./assets/hair_texture_2k.png');
+  texHair.colorSpace = THREE.SRGBColorSpace;
+  texHair.flipY = true;
+
+  // Root group: flip OpenCV Y/Z to Three.js Y-up
+  const root = new THREE.Group();
+  scene.add(root);
+
+  // Face BufferGeometry
+  const faceGeo = new THREE.BufferGeometry();
+  const facePosCur = new Float32Array(manifest.face_verts * 3);
+  faceGeo.setAttribute('position', new THREE.BufferAttribute(facePosCur, 3));
+  faceGeo.setAttribute('uv', new THREE.BufferAttribute(faceUV, 2));
+  faceGeo.setIndex(new THREE.BufferAttribute(faceIdx, 1));
+  const faceMat = new THREE.MeshBasicMaterial({ map: texFace, side: THREE.DoubleSide });
+  const faceMesh = new THREE.Mesh(faceGeo, faceMat);
+  root.add(faceMesh);
+
+  // Hair BufferGeometry
+  const hairGeo = new THREE.BufferGeometry();
+  hairGeo.setAttribute('position', new THREE.BufferAttribute(hairPos, 3));
+  hairGeo.setAttribute('uv', new THREE.BufferAttribute(hairUV, 2));
+  hairGeo.setIndex(new THREE.BufferAttribute(hairIdx, 1));
+  const hairMat = new THREE.MeshBasicMaterial({ map: texHair, side: THREE.DoubleSide });
+  const hairMesh = new THREE.Mesh(hairGeo, hairMat);
+  root.add(hairMesh);
+
+  // 100-Node DG overlay (points + edges)
+  const dgNodePosCur = new Float32Array(manifest.dg_nodes * 3);
+  const dgPtsGeo = new THREE.BufferGeometry();
+  dgPtsGeo.setAttribute('position', new THREE.BufferAttribute(dgNodePosCur, 3));
+  const dgPts = new THREE.Points(dgPtsGeo, new THREE.PointsMaterial({ color: 0xff3282, size: 0.045 }));
+  root.add(dgPts);
+
+  const dgEdgePosCur = new Float32Array(manifest.dg_edges * 2 * 3);
+  const dgEdgeGeo = new THREE.BufferGeometry();
+  dgEdgeGeo.setAttribute('position', new THREE.BufferAttribute(dgEdgePosCur, 3));
+  const dgLines = new THREE.LineSegments(dgEdgeGeo, new THREE.LineBasicMaterial({ color: 0xff8c28, transparent: true, opacity: 0.75 }));
+  root.add(dgLines);
+
+  // Initial Orbit Camera positioned cleanly in front of canonical frame 168
+  const hc = manifest.head_center;
+  function setOrbitView() {
+    controls.enabled = true;
+    // Align up-vector from canonical frame 168 camera
+    const c168 = cams240.subarray(168 * 16, 169 * 16);
+    const up = new THREE.Vector3(-c168[4], -c168[5], -c168[6]).normalize();
+    const fwd = new THREE.Vector3(c168[8], c168[9], c168[10]).normalize();
+    camera.up.copy(up);
+    controls.target.set(hc[0], hc[1], hc[2]);
+    camera.position.set(hc[0] - fwd.x * 5.2, hc[1] - fwd.y * 5.2, hc[2] - fwd.z * 5.2);
+    controls.update();
+  }
+  setOrbitView();
+
+  function applyVideoCamera(fr) {
+    controls.enabled = false;
+    const m = cams240.subarray(fr * 16, (fr + 1) * 16);
+    // OpenCV extrinsic [R | t; 0 0 0 1]: X_cam = R * X_world + t => camPos = -R^T * t
+    const rx = new THREE.Vector3(m[0], m[1], m[2]);
+    const ry = new THREE.Vector3(m[4], m[5], m[6]);
+    const rz = new THREE.Vector3(m[8], m[9], m[10]);
+    const tx = m[3], ty = m[7], tz = m[11];
+    const camPos = new THREE.Vector3(
+      -(rx.x * tx + ry.x * ty + rz.x * tz),
+      -(rx.y * tx + ry.y * ty + rz.y * tz),
+      -(rx.z * tx + ry.z * ty + rz.z * tz)
+    );
+    camera.position.copy(camPos);
+    camera.up.set(-ry.x, -ry.y, -ry.z).normalize();
+    camera.lookAt(camPos.x + rz.x, camPos.y + rz.y, camPos.z + rz.z);
+  }
+
+  let curFrame = 168;
+  function setFrame(fr) {
+    curFrame = ((fr % manifest.n_frames) + manifest.n_frames) % manifest.n_frames;
+    const fStride = manifest.face_verts * 3;
+    facePosCur.set(facePos240.subarray(curFrame * fStride, (curFrame + 1) * fStride));
+    faceGeo.attributes.position.needsUpdate = true;
+    faceGeo.computeVertexNormals();
+
+    const gStride = manifest.dg_nodes * 3;
+    dgNodePosCur.set(dgNodes240.subarray(curFrame * gStride, (curFrame + 1) * gStride));
+    dgPtsGeo.attributes.position.needsUpdate = true;
+
+    for (let e = 0; e < manifest.dg_edges; e++) {
+      const a = dgEdges[e * 2], b = dgEdges[e * 2 + 1];
+      const o = e * 6;
+      dgEdgePosCur[o] = dgNodePosCur[a * 3]; dgEdgePosCur[o + 1] = dgNodePosCur[a * 3 + 1]; dgEdgePosCur[o + 2] = dgNodePosCur[a * 3 + 2];
+      dgEdgePosCur[o + 3] = dgNodePosCur[b * 3]; dgEdgePosCur[o + 4] = dgNodePosCur[b * 3 + 1]; dgEdgePosCur[o + 5] = dgNodePosCur[b * 3 + 2];
+    }
+    dgEdgeGeo.attributes.position.needsUpdate = true;
+
+    if (document.getElementById('camMode').value === 'video') applyVideoCamera(curFrame);
+    document.getElementById('slider').value = curFrame;
+    document.getElementById('frameTxt').textContent = `Frame ${String(curFrame).padStart(3, '0')} / 239`;
+  }
+
+  document.getElementById('statsTxt').textContent =
+    `脸 ${manifest.face_tris.toLocaleString()} 面 | 头发 ${manifest.hair_tris.toLocaleString()} 面 | ${manifest.dg_nodes} DG 节点`;
+
+  document.getElementById('chkFace').onchange = e => { faceMesh.visible = e.target.checked; };
+  document.getElementById('chkHair').onchange = e => { hairMesh.visible = e.target.checked; };
+  document.getElementById('chkDG').onchange = e => { dgPts.visible = e.target.checked; dgLines.visible = e.target.checked; };
+  document.getElementById('chkWire').onchange = e => { faceMat.wireframe = e.target.checked; hairMat.wireframe = e.target.checked; };
+  document.getElementById('camMode').onchange = e => {
+    if (e.target.value === 'orbit') setOrbitView();
+    else applyVideoCamera(curFrame);
+  };
+
+  let timer = null;
+  const playBtn = document.getElementById('playBtn');
+  function togglePlay() {
+    if (timer) { clearInterval(timer); timer = null; playBtn.textContent = '▶ 播放'; }
+    else {
+      const ms = Math.round(1000 / Number(document.getElementById('fpsSel').value));
+      timer = setInterval(() => setFrame(curFrame + 1), ms);
+      playBtn.textContent = '⏸ 暂停';
+    }
+  }
+  playBtn.onclick = togglePlay;
+  document.getElementById('prevBtn').onclick = () => setFrame(curFrame - 1);
+  document.getElementById('nextBtn').onclick = () => setFrame(curFrame + 1);
+  document.getElementById('slider').oninput = e => setFrame(Number(e.target.value));
+  document.getElementById('fpsSel').onchange = () => { if (timer) { togglePlay(); togglePlay(); } };
+
+  setFrame(168);
+  document.getElementById('loading').style.display = 'none';
+
+  function animate() {
+    requestAnimationFrame(animate);
+    if (controls.enabled) controls.update();
+    renderer.render(scene, camera);
+  }
+  animate();
+}
+
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+init();
+</script>
+</body>
+</html>
