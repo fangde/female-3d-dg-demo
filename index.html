@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Three.js 3D Viewer — 100-Node DG Face + Stage 9 Hair (240f)</title>
+<title>Three.js 3D Viewer — 100-DG Face + 150-DG Hair (240f)</title>
 <style>
   html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #0d1117; color: #e6edf3; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
   #canvasWrap { position: fixed; inset: 0; }
@@ -38,11 +38,11 @@
 </style>
 </head>
 <body>
-<div id="loading">正在加载 Three.js 240 帧网格、2K 贴图与 100 节点形变数据...</div>
+<div id="loading">正在加载 Three.js 240 帧脸+发网格、2K 贴图与 100+150 DG 形变数据...</div>
 <div id="canvasWrap"></div>
 
 <div id="hud">
-  <div class="h-title">Three.js 3D 交互预览（脸 + 头发 + 240帧形变）</div>
+  <div class="h-title">Three.js 3D 交互预览（100-DG 脸 + 150-DG 头发 240帧）</div>
   <div class="h-sub" id="statsTxt">加载中...</div>
   <div class="row">
     <span>相机模式</span>
@@ -54,14 +54,14 @@
   <div class="toggles">
     <label class="chk"><input type="checkbox" id="chkFace" checked> 显示脸部</label>
     <label class="chk"><input type="checkbox" id="chkHair" checked> 显示头发</label>
-    <label class="chk"><input type="checkbox" id="chkDG" checked> 100节点 DG</label>
+    <label class="chk"><input type="checkbox" id="chkDG" checked> DG 形变图 (250)</label>
     <label class="chk"><input type="checkbox" id="chkWire"> 网格线框</label>
   </div>
   <div class="row" style="margin-top:10px;">
     <button id="recBtn">🎬 录制 Demo (12s)</button>
-    <a href="assets/face_canonical.obj" download style="color:#58a6ff;font-size:11px;text-decoration:none;">face.obj</a>
-    <a href="assets/hair_canonical.obj" download style="color:#58a6ff;font-size:11px;text-decoration:none;">hair.obj</a>
-    <a href="assets/scene_240f.bin" download style="color:#58a6ff;font-size:11px;text-decoration:none;">240f.bin</a>
+    <a href="assets/face_canonical.obj" download style="color:#58a6ff;font-size:11px;text-decoration:none;">下载 face.obj</a>
+    <a href="assets/hair_canonical.obj" download style="color:#58a6ff;font-size:11px;text-decoration:none;">下载 hair.obj</a>
+    <a href="assets/scene_240f.bin" download style="color:#58a6ff;font-size:11px;text-decoration:none;">下载 240f.bin</a>
   </div>
 </div>
 
@@ -118,9 +118,15 @@ async function init() {
   const facePos240 = getView('face_pos_240');
   const faceUV = getView('face_uv');
   const faceIdx = getView('face_idx');
-  const hairPos = getView('hair_pos');
+  const hairCanon = getView('hair_pos');
   const hairUV = getView('hair_uv');
   const hairIdx = getView('hair_idx');
+  const hairKnn = getView('hair_knn');
+  const hairW = getView('hair_w');
+  const hairGPos = getView('hair_g_pos');
+  const hairP240 = getView('hair_p_240');
+  const hairDGNodes240 = getView('hair_dg_nodes_240');
+  const hairDGEdges = getView('hair_dg_edges');
   const dgNodes240 = getView('dg_nodes_240');
   const dgEdges = getView('dg_edges');
   const cams240 = getView('cameras_240');
@@ -132,6 +138,8 @@ async function init() {
   const texHair = await texLoader.loadAsync('./assets/hair_texture_2k.png');
   texHair.colorSpace = THREE.SRGBColorSpace;
   texHair.flipY = true;
+  texHair.wrapS = THREE.RepeatWrapping;
+  texHair.wrapT = THREE.RepeatWrapping;
 
   // Root group: flip OpenCV Y/Z to Three.js Y-up
   const root = new THREE.Group();
@@ -147,16 +155,18 @@ async function init() {
   const faceMesh = new THREE.Mesh(faceGeo, faceMat);
   root.add(faceMesh);
 
-  // Hair BufferGeometry
+  // Hair BufferGeometry (240-frame 150-node DG LBS evaluated in browser)
   const hairGeo = new THREE.BufferGeometry();
-  hairGeo.setAttribute('position', new THREE.BufferAttribute(hairPos, 3));
+  const hairPosCur = new Float32Array(manifest.hair_verts * 3);
+  hairGeo.setAttribute('position', new THREE.BufferAttribute(hairPosCur, 3));
   hairGeo.setAttribute('uv', new THREE.BufferAttribute(hairUV, 2));
   hairGeo.setIndex(new THREE.BufferAttribute(hairIdx, 1));
   const hairMat = new THREE.MeshBasicMaterial({ map: texHair, side: THREE.DoubleSide });
   const hairMesh = new THREE.Mesh(hairGeo, hairMat);
   root.add(hairMesh);
+  const hairRMat = new Float32Array(manifest.hair_dg_nodes * 9);
 
-  // 100-Node DG overlay (points + edges)
+  // 100-Node Face DG overlay (magenta/orange)
   const dgNodePosCur = new Float32Array(manifest.dg_nodes * 3);
   const dgPtsGeo = new THREE.BufferGeometry();
   dgPtsGeo.setAttribute('position', new THREE.BufferAttribute(dgNodePosCur, 3));
@@ -168,6 +178,19 @@ async function init() {
   dgEdgeGeo.setAttribute('position', new THREE.BufferAttribute(dgEdgePosCur, 3));
   const dgLines = new THREE.LineSegments(dgEdgeGeo, new THREE.LineBasicMaterial({ color: 0xff8c28, transparent: true, opacity: 0.75 }));
   root.add(dgLines);
+
+  // 150-Node Hair DG overlay (cyan)
+  const hdgNodePosCur = new Float32Array(manifest.hair_dg_nodes * 3);
+  const hdgPtsGeo = new THREE.BufferGeometry();
+  hdgPtsGeo.setAttribute('position', new THREE.BufferAttribute(hdgNodePosCur, 3));
+  const hdgPts = new THREE.Points(hdgPtsGeo, new THREE.PointsMaterial({ color: 0x39d0ff, size: 0.04 }));
+  root.add(hdgPts);
+
+  const hdgEdgePosCur = new Float32Array(manifest.hair_dg_edges * 2 * 3);
+  const hdgEdgeGeo = new THREE.BufferGeometry();
+  hdgEdgeGeo.setAttribute('position', new THREE.BufferAttribute(hdgEdgePosCur, 3));
+  const hdgLines = new THREE.LineSegments(hdgEdgeGeo, new THREE.LineBasicMaterial({ color: 0x58a6ff, transparent: true, opacity: 0.55 }));
+  root.add(hdgLines);
 
   // Initial Orbit Camera positioned cleanly in front of canonical frame 168
   const hc = manifest.head_center;
@@ -202,6 +225,47 @@ async function init() {
     camera.lookAt(camPos.x + rz.x, camPos.y + rz.y, camPos.z + rz.z);
   }
 
+  function applyHairDG(fr) {
+    const pBase = fr * manifest.hair_dg_nodes * 6;
+    for (let k = 0; k < manifest.hair_dg_nodes; k++) {
+      const rx = hairP240[pBase + k * 6];
+      const ry = hairP240[pBase + k * 6 + 1];
+      const rz = hairP240[pBase + k * 6 + 2];
+      const th = Math.hypot(rx, ry, rz);
+      const o = k * 9;
+      if (th < 1e-6) {
+        hairRMat[o] = 1; hairRMat[o + 1] = -rz; hairRMat[o + 2] = ry;
+        hairRMat[o + 3] = rz; hairRMat[o + 4] = 1; hairRMat[o + 5] = -rx;
+        hairRMat[o + 6] = -ry; hairRMat[o + 7] = rx; hairRMat[o + 8] = 1;
+      } else {
+        const kx = rx / th, ky = ry / th, kz = rz / th;
+        const c = Math.cos(th), s = Math.sin(th), mc = 1 - c;
+        hairRMat[o]     = c + kx * kx * mc;     hairRMat[o + 1] = kx * ky * mc - kz * s; hairRMat[o + 2] = kx * kz * mc + ky * s;
+        hairRMat[o + 3] = ky * kx * mc + kz * s; hairRMat[o + 4] = c + ky * ky * mc;     hairRMat[o + 5] = ky * kz * mc - kx * s;
+        hairRMat[o + 6] = kz * kx * mc - ky * s; hairRMat[o + 7] = kz * ky * mc + kx * s; hairRMat[o + 8] = c + kz * kz * mc;
+      }
+    }
+    const nv = manifest.hair_verts;
+    for (let i = 0; i < nv; i++) {
+      const vx = hairCanon[i * 3], vy = hairCanon[i * 3 + 1], vz = hairCanon[i * 3 + 2];
+      let ox = 0, oy = 0, oz = 0;
+      const kOff = i * 4;
+      for (let j = 0; j < 4; j++) {
+        const k = hairKnn[kOff + j];
+        const w = hairW[kOff + j];
+        const gx = hairGPos[k * 3], gy = hairGPos[k * 3 + 1], gz = hairGPos[k * 3 + 2];
+        const dx = vx - gx, dy = vy - gy, dz = vz - gz;
+        const r = k * 9, t = pBase + k * 6 + 3;
+        ox += w * (gx + hairRMat[r] * dx + hairRMat[r + 1] * dy + hairRMat[r + 2] * dz + hairP240[t]);
+        oy += w * (gy + hairRMat[r + 3] * dx + hairRMat[r + 4] * dy + hairRMat[r + 5] * dz + hairP240[t + 1]);
+        oz += w * (gz + hairRMat[r + 6] * dx + hairRMat[r + 7] * dy + hairRMat[r + 8] * dz + hairP240[t + 2]);
+      }
+      hairPosCur[i * 3] = ox; hairPosCur[i * 3 + 1] = oy; hairPosCur[i * 3 + 2] = oz;
+    }
+    hairGeo.attributes.position.needsUpdate = true;
+    hairGeo.computeVertexNormals();
+  }
+
   let curFrame = 168;
   function setFrame(fr) {
     curFrame = ((fr % manifest.n_frames) + manifest.n_frames) % manifest.n_frames;
@@ -209,6 +273,8 @@ async function init() {
     facePosCur.set(facePos240.subarray(curFrame * fStride, (curFrame + 1) * fStride));
     faceGeo.attributes.position.needsUpdate = true;
     faceGeo.computeVertexNormals();
+
+    applyHairDG(curFrame);
 
     const gStride = manifest.dg_nodes * 3;
     dgNodePosCur.set(dgNodes240.subarray(curFrame * gStride, (curFrame + 1) * gStride));
@@ -222,17 +288,33 @@ async function init() {
     }
     dgEdgeGeo.attributes.position.needsUpdate = true;
 
+    const hgStride = manifest.hair_dg_nodes * 3;
+    hdgNodePosCur.set(hairDGNodes240.subarray(curFrame * hgStride, (curFrame + 1) * hgStride));
+    hdgPtsGeo.attributes.position.needsUpdate = true;
+
+    for (let e = 0; e < manifest.hair_dg_edges; e++) {
+      const a = hairDGEdges[e * 2], b = hairDGEdges[e * 2 + 1];
+      const o = e * 6;
+      hdgEdgePosCur[o] = hdgNodePosCur[a * 3]; hdgEdgePosCur[o + 1] = hdgNodePosCur[a * 3 + 1]; hdgEdgePosCur[o + 2] = hdgNodePosCur[a * 3 + 2];
+      hdgEdgePosCur[o + 3] = hdgNodePosCur[b * 3]; hdgEdgePosCur[o + 4] = hdgNodePosCur[b * 3 + 1]; hdgEdgePosCur[o + 5] = hdgNodePosCur[b * 3 + 2];
+    }
+    hdgEdgeGeo.attributes.position.needsUpdate = true;
+
     if (document.getElementById('camMode').value === 'video') applyVideoCamera(curFrame);
     document.getElementById('slider').value = curFrame;
     document.getElementById('frameTxt').textContent = `Frame ${String(curFrame).padStart(3, '0')} / 239`;
   }
 
   document.getElementById('statsTxt').textContent =
-    `脸 ${manifest.face_tris.toLocaleString()} 面 | 头发 ${manifest.hair_tris.toLocaleString()} 面 | ${manifest.dg_nodes} DG 节点`;
+    `脸 ${manifest.face_tris.toLocaleString()} 面 (${manifest.dg_nodes} DG) | 发 ${manifest.hair_tris.toLocaleString()} 面 (${manifest.hair_dg_nodes} DG)`;
 
   document.getElementById('chkFace').onchange = e => { faceMesh.visible = e.target.checked; };
   document.getElementById('chkHair').onchange = e => { hairMesh.visible = e.target.checked; };
-  document.getElementById('chkDG').onchange = e => { dgPts.visible = e.target.checked; dgLines.visible = e.target.checked; };
+  document.getElementById('chkDG').onchange = e => {
+    const v = e.target.checked;
+    dgPts.visible = v; dgLines.visible = v;
+    hdgPts.visible = v; hdgLines.visible = v;
+  };
   document.getElementById('chkWire').onchange = e => { faceMat.wireframe = e.target.checked; hairMat.wireframe = e.target.checked; };
   document.getElementById('camMode').onchange = e => {
     if (e.target.value === 'orbit') setOrbitView();
@@ -299,6 +381,7 @@ async function init() {
         const showDG = p < 0.25 || p >= 0.50;
         const showWire = p >= 0.50;
         dgPts.visible = showDG; dgLines.visible = showDG;
+        hdgPts.visible = showDG; hdgLines.visible = showDG;
         document.getElementById('chkDG').checked = showDG;
         faceMat.wireframe = showWire; hairMat.wireframe = showWire;
         document.getElementById('chkWire').checked = showWire;
@@ -306,6 +389,7 @@ async function init() {
       } else {
         faceMat.wireframe = false; hairMat.wireframe = false;
         dgPts.visible = true; dgLines.visible = true;
+        hdgPts.visible = true; hdgLines.visible = true;
         document.getElementById('camMode').value = 'video';
         const fr = Math.floor(134 + ((p - 0.75) / 0.25) * 105);
         setFrame(fr);

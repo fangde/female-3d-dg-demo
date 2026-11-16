@@ -3,45 +3,47 @@
   "focal": 1096.4397515,
   "image_w": 720,
   "image_h": 1280,
-  "face_verts": 7084,
-  "face_tris": 13743,
+  "face_verts": 7074,
+  "face_tris": 13727,
   "hair_verts": 22324,
   "hair_tris": 44000,
   "dg_nodes": 100,
   "dg_edges": 347,
+  "hair_dg_nodes": 150,
+  "hair_dg_edges": 495,
   "head_center": [
-    0.005495158955454826,
-    -0.4069395363330841,
-    3.5671145915985107
+    0.0054313549771904945,
+    -0.4070911407470703,
+    3.565743923187256
   ],
   "buffers": {
     "face_pos_240": {
       "dtype": "float32",
       "shape": [
         240,
-        7084,
+        7074,
         3
       ],
       "byteOffset": 0,
-      "byteLength": 20401920
+      "byteLength": 20373120
     },
     "face_uv": {
       "dtype": "float32",
       "shape": [
-        7084,
+        7074,
         2
       ],
-      "byteOffset": 20401920,
-      "byteLength": 56672
+      "byteOffset": 20373120,
+      "byteLength": 56592
     },
     "face_idx": {
       "dtype": "uint32",
       "shape": [
-        13743,
+        13727,
         3
       ],
-      "byteOffset": 20458592,
-      "byteLength": 164916
+      "byteOffset": 20429712,
+      "byteLength": 164724
     },
     "hair_pos": {
       "dtype": "float32",
@@ -49,7 +51,7 @@
         22324,
         3
       ],
-      "byteOffset": 20623508,
+      "byteOffset": 20594436,
       "byteLength": 267888
     },
     "hair_uv": {
@@ -58,7 +60,7 @@
         22324,
         2
       ],
-      "byteOffset": 20891396,
+      "byteOffset": 20862324,
       "byteLength": 178592
     },
     "hair_idx": {
@@ -67,8 +69,64 @@
         44000,
         3
       ],
-      "byteOffset": 21069988,
+      "byteOffset": 21040916,
       "byteLength": 528000
+    },
+    "hair_knn": {
+      "dtype": "uint16",
+      "shape": [
+        22324,
+        4
+      ],
+      "byteOffset": 21568916,
+      "byteLength": 178592
+    },
+    "hair_w": {
+      "dtype": "float32",
+      "shape": [
+        22324,
+        4
+      ],
+      "byteOffset": 21747508,
+      "byteLength": 357184
+    },
+    "hair_g_pos": {
+      "dtype": "float32",
+      "shape": [
+        150,
+        3
+      ],
+      "byteOffset": 22104692,
+      "byteLength": 1800
+    },
+    "hair_p_240": {
+      "dtype": "float32",
+      "shape": [
+        240,
+        150,
+        6
+      ],
+      "byteOffset": 22106492,
+      "byteLength": 864000
+    },
+    "hair_dg_nodes_240": {
+      "dtype": "float32",
+      "shape": [
+        240,
+        150,
+        3
+      ],
+      "byteOffset": 22970492,
+      "byteLength": 432000
+    },
+    "hair_dg_edges": {
+      "dtype": "uint16",
+      "shape": [
+        495,
+        2
+      ],
+      "byteOffset": 23402492,
+      "byteLength": 1980
     },
     "dg_nodes_240": {
       "dtype": "float32",
@@ -77,7 +135,7 @@
         100,
         3
       ],
-      "byteOffset": 21597988,
+      "byteOffset": 23404472,
       "byteLength": 288000
     },
     "dg_edges": {
@@ -86,7 +144,7 @@
         347,
         2
       ],
-      "byteOffset": 21885988,
+      "byteOffset": 23692472,
       "byteLength": 1388
     },
     "cameras_240": {
@@ -96,7 +154,7 @@
         4,
         4
       ],
-      "byteOffset": 21887376,
+      "byteOffset": 23693860,
       "byteLength": 15360
     }
   }
